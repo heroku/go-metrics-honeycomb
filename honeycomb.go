@@ -2,21 +2,23 @@ package honeycomb
 
 import (
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/honeycombio/libhoney-go"
-	"github.com/rcrowley/go-metrics"
+	"github.com/mble/go-metrics"
 )
 
 var DefaultPercentiles = []float64{.5, .95, .99, .999}
 var DefaultInterval = 60 * time.Second
 
 type Reporter struct {
-	Registry    metrics.Registry
-	Interval    time.Duration
-	WriteKey    string
-	Dataset     string
-	Percentiles []float64 // percentiles to report on histogram metrics
+	Registry      metrics.Registry
+	Interval      time.Duration
+	WriteKey      string
+	Dataset       string
+	Percentiles   []float64 // percentiles to report on histogram metrics
+	ResetCounters bool
 
 	stopped chan struct{}
 }
@@ -25,6 +27,7 @@ func NewDefaultReporter(
 	registry metrics.Registry,
 	writeKey string,
 	dataset string,
+	resetCounters bool,
 ) *Reporter {
 	return NewReporter(
 		registry,
@@ -32,6 +35,7 @@ func NewDefaultReporter(
 		writeKey,
 		dataset,
 		DefaultPercentiles,
+		resetCounters,
 	)
 }
 
@@ -41,13 +45,15 @@ func NewReporter(
 	writeKey string,
 	dataset string,
 	percentiles []float64,
+	resetCounters bool,
 ) *Reporter {
 	r := &Reporter{
-		Registry:    registry,
-		Interval:    interval,
-		WriteKey:    writeKey,
-		Dataset:     dataset,
-		Percentiles: percentiles,
+		Registry:      registry,
+		Interval:      interval,
+		WriteKey:      writeKey,
+		Dataset:       dataset,
+		Percentiles:   percentiles,
+		ResetCounters: resetCounters,
 	}
 	r.Init()
 	return r
@@ -59,8 +65,9 @@ func Honeycomb(
 	writeKey string,
 	dataset string,
 	percentiles []float64,
+	resetCounters bool,
 ) {
-	NewReporter(registry, interval, writeKey, dataset, percentiles).Run()
+	NewReporter(registry, interval, writeKey, dataset, percentiles, resetCounters).Run()
 }
 
 // Initializes the Honeycomb client.
@@ -82,7 +89,11 @@ func (r *Reporter) Run() {
 	for {
 		select {
 		case <-time.After(r.Interval):
-			libhoney.SendNow(r.buildRequest())
+			e := libhoney.NewEvent()
+			e.Add(r.buildRequest())
+			if err := e.Send(); err != nil {
+				log.Printf("at=honeycomb-send err=%q", err)
+			}
 		case <-r.stopped:
 			return
 		}
@@ -103,6 +114,10 @@ func (r *Reporter) buildRequest() map[string]interface{} {
 			if m.Count() > 0 {
 				metricsMap[fmt.Sprintf("%s.count", name)] = float64(m.Count())
 			}
+
+			if r.ResetCounters {
+				m.Clear()
+			}
 		case metrics.Gauge:
 			metricsMap[name] = float64(m.Value())
 		case metrics.GaugeFloat64:
@@ -118,6 +133,10 @@ func (r *Reporter) buildRequest() map[string]interface{} {
 				for _, p := range r.Percentiles {
 					metricsMap[fmt.Sprintf("%s.p%g", name, p*100)] = s.Percentile(p)
 				}
+			}
+
+			if r.ResetCounters {
+				m.Clear()
 			}
 		case metrics.Meter:
 			metricsMap[name] = float64(m.Count())
@@ -137,6 +156,10 @@ func (r *Reporter) buildRequest() map[string]interface{} {
 				metricsMap[fmt.Sprintf("%s.rate.1min", name)] = float64(m.Rate1())
 				metricsMap[fmt.Sprintf("%s.rate.5min", name)] = float64(m.Rate5())
 				metricsMap[fmt.Sprintf("%s.rate.15min", name)] = float64(m.Rate15())
+			}
+
+			if r.ResetCounters {
+				m.Clear()
 			}
 		}
 	})
