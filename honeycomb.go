@@ -3,6 +3,7 @@ package honeycomb
 import (
 	"fmt"
 	"log"
+	"os"
 	"time"
 
 	"github.com/honeycombio/libhoney-go"
@@ -90,7 +91,14 @@ func (r *Reporter) Run() {
 		select {
 		case <-time.After(r.Interval):
 			e := libhoney.NewEvent()
-			e.Add(r.buildRequest())
+
+			req := r.buildRequest()
+			_, found := os.LookupEnv("DEBUG")
+			if found {
+				log.Printf("at=honeycomb-body body=%+v", req)
+			}
+
+			e.Add(req)
 			if err := e.Send(); err != nil {
 				log.Printf("at=honeycomb-send err=%q", err)
 			}
