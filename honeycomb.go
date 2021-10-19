@@ -18,6 +18,8 @@ type Reporter struct {
 	Interval      time.Duration
 	WriteKey      string
 	Dataset       string
+	Namespace     string
+	Source        string
 	Percentiles   []float64 // percentiles to report on histogram metrics
 	ResetCounters bool
 
@@ -28,6 +30,8 @@ func NewDefaultReporter(
 	registry metrics.Registry,
 	writeKey string,
 	dataset string,
+	namespace string,
+	source string,
 	resetCounters bool,
 ) *Reporter {
 	return NewReporter(
@@ -35,6 +39,8 @@ func NewDefaultReporter(
 		DefaultInterval,
 		writeKey,
 		dataset,
+		namespace,
+		source,
 		DefaultPercentiles,
 		resetCounters,
 	)
@@ -45,6 +51,8 @@ func NewReporter(
 	interval time.Duration,
 	writeKey string,
 	dataset string,
+	namespace string,
+	source string,
 	percentiles []float64,
 	resetCounters bool,
 ) *Reporter {
@@ -53,6 +61,8 @@ func NewReporter(
 		Interval:      interval,
 		WriteKey:      writeKey,
 		Dataset:       dataset,
+		Namespace:     namespace,
+		Source:        source,
 		Percentiles:   percentiles,
 		ResetCounters: resetCounters,
 	}
@@ -65,10 +75,12 @@ func Honeycomb(
 	interval time.Duration,
 	writeKey string,
 	dataset string,
+	namespace string,
+	source string,
 	percentiles []float64,
 	resetCounters bool,
 ) {
-	NewReporter(registry, interval, writeKey, dataset, percentiles, resetCounters).Run()
+	NewReporter(registry, interval, writeKey, dataset, namespace, source, percentiles, resetCounters).Run()
 }
 
 // Initializes the Honeycomb client.
@@ -98,6 +110,7 @@ func (r *Reporter) Run() {
 				log.Printf("at=honeycomb-body body=%+v", req)
 			}
 
+			e.AddField("source", r.Source)
 			e.Add(req)
 			if err := e.Send(); err != nil {
 				log.Printf("at=honeycomb-send err=%q", err)
@@ -117,6 +130,10 @@ func (r *Reporter) Stop() {
 func (r *Reporter) buildRequest() map[string]interface{} {
 	metricsMap := make(map[string]interface{})
 	r.Registry.Each(func(name string, metric interface{}) {
+		if r.Namespace != "" {
+			name = fmt.Sprintf("%s.%s", r.Namespace, name)
+		}
+
 		switch m := metric.(type) {
 		case metrics.Counter:
 			if m.Count() > 0 {
@@ -152,7 +169,7 @@ func (r *Reporter) buildRequest() map[string]interface{} {
 			metricsMap[fmt.Sprintf("%s.rate.5min", name)] = float64(m.Rate5())
 			metricsMap[fmt.Sprintf("%s.rate.15min", name)] = float64(m.Rate15())
 		case metrics.Timer:
-			metricsMap[fmt.Sprintf("%s.count", name)] = float64(m.Count())
+			metricsMap[name] = float64(m.Count())
 			if m.Count() > 0 {
 				metricsMap[fmt.Sprintf("%s.max", name)] = float64(m.Max())
 				metricsMap[fmt.Sprintf("%s.mean", name)] = float64(m.Mean())
