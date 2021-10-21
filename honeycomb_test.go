@@ -9,6 +9,17 @@ import (
 	honeycomb "github.com/mble/go-metrics-honeycomb"
 )
 
+func reportersEqual(got, expected *honeycomb.Reporter) bool {
+	return got.Registry == expected.Registry &&
+		got.Interval == expected.Interval &&
+		got.WriteKey == expected.WriteKey &&
+		got.Dataset == expected.Dataset &&
+		got.ServiceName == expected.ServiceName &&
+		got.Source == expected.Source &&
+		got.ResetCounters == expected.ResetCounters &&
+		reflect.DeepEqual(got.Percentiles, expected.Percentiles)
+}
+
 func newReporter(t *testing.T) *honeycomb.Reporter {
 	t.Helper()
 
@@ -45,7 +56,7 @@ func TestNewDefaultReporter(t *testing.T) {
 		ResetCounters: false,
 	}
 
-	if !reflect.DeepEqual(reporter, expected) {
+	if !reportersEqual(reporter, expected) {
 		t.Errorf("got=%+v expected=%+v", reporter, expected)
 	}
 }
@@ -75,7 +86,7 @@ func TestNewReporter(t *testing.T) {
 		ResetCounters: true,
 	}
 
-	if !reflect.DeepEqual(reporter, expected) {
+	if !reportersEqual(reporter, expected) {
 		t.Errorf("got=%+v expected=%+v", reporter, expected)
 	}
 }

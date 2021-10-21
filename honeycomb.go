@@ -20,6 +20,7 @@ type Reporter struct {
 	Percentiles   []float64 // percentiles to report on histogram metrics
 	ResetCounters bool
 
+	client  *libhoney.Client
 	stopped chan struct{}
 }
 
@@ -85,18 +86,22 @@ func Honeycomb(
 
 // Initializes the Honeycomb client.
 func (r *Reporter) Init() {
-	err := libhoney.Init(libhoney.Config{
-		WriteKey: r.WriteKey,
-		Dataset:  r.Dataset,
-	})
+	cfg := libhoney.ClientConfig{
+		APIKey:  r.WriteKey,
+		Dataset: r.Dataset,
+	}
+
+	client, err := libhoney.NewClient(cfg)
 	if err != nil {
 		panic(fmt.Sprintf("at=libhoney-init err=%q", err))
 	}
+
+	r.client = client
 }
 
 // Convenience method around libhoney.AddField()
 func (r *Reporter) AddField(key string, val interface{}) {
-	libhoney.AddField(key, val)
+	r.client.AddField(key, val)
 }
 
 // Blocks and starts reporting metrics from the provided registry to Honeycomb.
@@ -118,7 +123,7 @@ func (r *Reporter) Run() {
 // Stops the metrics reporting process and closes any connections to Honeycomb.
 func (r *Reporter) Stop() {
 	close(r.stopped)
-	libhoney.Close()
+	r.client.Close()
 }
 
 func (r *Reporter) buildRequest() map[string]interface{} {
@@ -182,7 +187,7 @@ func (r *Reporter) buildRequest() map[string]interface{} {
 }
 
 func (r *Reporter) BuildEvent() *libhoney.Event {
-	e := libhoney.NewEvent()
+	e := r.client.NewEvent()
 
 	req := r.buildRequest()
 	_, found := os.LookupEnv("DEBUG")
