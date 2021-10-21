@@ -10,15 +10,12 @@ import (
 	"github.com/mble/go-metrics"
 )
 
-var DefaultPercentiles = []float64{.5, .95, .99, .999}
-var DefaultInterval = 60 * time.Second
-
 type Reporter struct {
 	Registry      metrics.Registry
 	Interval      time.Duration
 	WriteKey      string
 	Dataset       string
-	Namespace     string
+	ServiceName   string
 	Source        string
 	Percentiles   []float64 // percentiles to report on histogram metrics
 	ResetCounters bool
@@ -30,18 +27,21 @@ func NewDefaultReporter(
 	registry metrics.Registry,
 	writeKey string,
 	dataset string,
-	namespace string,
+	serviceName string,
 	source string,
 	resetCounters bool,
 ) *Reporter {
+	defaultPercentiles := []float64{.5, .95, .99, .999}
+	defaultInterval := 60 * time.Second
+
 	return NewReporter(
 		registry,
-		DefaultInterval,
+		defaultInterval,
 		writeKey,
 		dataset,
-		namespace,
+		serviceName,
 		source,
-		DefaultPercentiles,
+		defaultPercentiles,
 		resetCounters,
 	)
 }
@@ -51,7 +51,7 @@ func NewReporter(
 	interval time.Duration,
 	writeKey string,
 	dataset string,
-	namespace string,
+	serviceName string,
 	source string,
 	percentiles []float64,
 	resetCounters bool,
@@ -61,7 +61,7 @@ func NewReporter(
 		Interval:      interval,
 		WriteKey:      writeKey,
 		Dataset:       dataset,
-		Namespace:     namespace,
+		ServiceName:   serviceName,
 		Source:        source,
 		Percentiles:   percentiles,
 		ResetCounters: resetCounters,
@@ -75,20 +75,23 @@ func Honeycomb(
 	interval time.Duration,
 	writeKey string,
 	dataset string,
-	namespace string,
+	serviceName string,
 	source string,
 	percentiles []float64,
 	resetCounters bool,
 ) {
-	NewReporter(registry, interval, writeKey, dataset, namespace, source, percentiles, resetCounters).Run()
+	NewReporter(registry, interval, writeKey, dataset, serviceName, source, percentiles, resetCounters).Run()
 }
 
 // Initializes the Honeycomb client.
 func (r *Reporter) Init() {
-	libhoney.Init(libhoney.Config{
+	err := libhoney.Init(libhoney.Config{
 		WriteKey: r.WriteKey,
 		Dataset:  r.Dataset,
 	})
+	if err != nil {
+		panic(fmt.Sprintf("at=libhoney-init err=%q", err))
+	}
 }
 
 // Convenience method around libhoney.AddField()
@@ -102,16 +105,7 @@ func (r *Reporter) Run() {
 	for {
 		select {
 		case <-time.After(r.Interval):
-			e := libhoney.NewEvent()
-
-			req := r.buildRequest()
-			_, found := os.LookupEnv("DEBUG")
-			if found {
-				log.Printf("at=honeycomb-body body=%+v", req)
-			}
-
-			e.AddField("source", r.Source)
-			e.Add(req)
+			e := r.BuildEvent()
 			if err := e.Send(); err != nil {
 				log.Printf("at=honeycomb-send err=%q", err)
 			}
@@ -130,10 +124,6 @@ func (r *Reporter) Stop() {
 func (r *Reporter) buildRequest() map[string]interface{} {
 	metricsMap := make(map[string]interface{})
 	r.Registry.Each(func(name string, metric interface{}) {
-		if r.Namespace != "" {
-			name = fmt.Sprintf("%s.%s", r.Namespace, name)
-		}
-
 		switch m := metric.(type) {
 		case metrics.Counter:
 			if m.Count() > 0 {
@@ -189,4 +179,23 @@ func (r *Reporter) buildRequest() map[string]interface{} {
 		}
 	})
 	return metricsMap
+}
+
+func (r *Reporter) BuildEvent() *libhoney.Event {
+	e := libhoney.NewEvent()
+
+	req := r.buildRequest()
+	_, found := os.LookupEnv("DEBUG")
+	if found {
+		log.Printf("at=honeycomb-body body=%+v", req)
+	}
+
+	e.AddField("source", r.Source)
+	e.AddField("service_name", r.ServiceName)
+	err := e.Add(req)
+	if err != nil {
+		log.Printf("at=honeycomb-add err=%q", err)
+	}
+
+	return e
 }
