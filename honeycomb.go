@@ -6,8 +6,8 @@ import (
 	"os"
 	"time"
 
+	"github.com/heroku/go-metrics"
 	"github.com/honeycombio/libhoney-go"
-	"github.com/mble/go-metrics"
 )
 
 type Reporter struct {

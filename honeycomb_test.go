@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mble/go-metrics"
-	honeycomb "github.com/mble/go-metrics-honeycomb"
+	"github.com/heroku/go-metrics"
+	honeycomb "github.com/heroku/go-metrics-honeycomb"
 )
 
 func reportersEqual(got, expected *honeycomb.Reporter) bool {

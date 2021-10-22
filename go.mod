@@ -1,10 +1,10 @@
-module github.com/mble/go-metrics-honeycomb
+module github.com/heroku/go-metrics-honeycomb
 
 go 1.17
 
 require (
+	github.com/heroku/go-metrics v0.0.0-20211022150449-c92400eb6c66
 	github.com/honeycombio/libhoney-go v1.15.5
-	github.com/mble/go-metrics v0.0.0-20211018144803-6a5f344a3b2a
 )
 
 require (
